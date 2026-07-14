@@ -1,6 +1,6 @@
 # ESP32 Water Level Monitor
 
-A live water-level dashboard for an ESP32, JSN-SR04T ultrasonic sensor, and SSD1306 OLED. The ESP32 streams measurements over USB serial, a local Node.js bridge converts them into a browser-friendly API, and a React dashboard displays the current percentage, alerts, and recent readings.
+A live water-level dashboard for an ESP32, JSN-SR04T ultrasonic sensor, and SSD1306 OLED. The ESP32 can host the dashboard directly over local Wi-Fi or stream measurements over USB serial to the optional Node.js bridge.
 
 ## What works
 
@@ -8,10 +8,14 @@ A live water-level dashboard for an ESP32, JSN-SR04T ultrasonic sensor, and SSD1
 - Water depth and percentage calculation
 - Responsive browser dashboard with WebSocket updates
 - Configurable container depth, name, and alert thresholds
+- Standalone Wi-Fi dashboard, REST API, and live WebSocket readings
+- Captive first-run Wi-Fi setup with persistent credentials and recovery
 - Windows, macOS, and Linux development setup
 - Firmware compile/upload through Arduino IDE or Arduino CLI
 
-Wi-Fi transport is planned but is not implemented yet. Its first-run experience will use a phone-friendly captive setup dashboard: join the temporary `WaterLevel-XXXX` network, choose the home Wi-Fi, and then open `water-level.local`. Use the local USB bridge for the current version. The complete standalone design is documented in [`docs/WIFI_MODE_SPEC.md`](docs/WIFI_MODE_SPEC.md).
+For first-time Wi-Fi setup, briefly join the temporary `WaterLevel-XXXX` network and choose the same 2.4 GHz Wi-Fi used by your phone or computer. The setup network has no internet access and closes automatically after setup. Rejoin your normal Wi-Fi, then open `http://water-level.local` or the IP address shown on the setup page and OLED. The complete standalone design is documented in [`docs/WIFI_MODE_SPEC.md`](docs/WIFI_MODE_SPEC.md).
+
+The same firmware can be flashed onto additional sensors; Wi-Fi credentials and hostnames are configured separately on each device and are never compiled into the repository. See the [sensor deployment guide](docs/SENSOR_DEPLOYMENT.md) for multi-sensor setup, network changes, and behavior away from home.
 
 ## Hardware
 
@@ -63,6 +67,8 @@ Open [http://localhost:5173](http://localhost:5173). Select the ESP32 serial por
 
 To stop both services, press `Ctrl+C` in the terminal.
 
+This starts the optional USB workflow. In standalone Wi-Fi mode, open the ESP32's `.local` name or LAN IP directly; `npm start` and a continuously running PC are not required.
+
 ## Upload the firmware
 
 ### Option A: Arduino IDE (recommended for first-time users)
@@ -74,6 +80,9 @@ To stop both services, press `Ctrl+C` in the terminal.
 4. Open **Library Manager** and install:
    - `Adafruit GFX Library`
    - `Adafruit SSD1306`
+   - `ArduinoJson`
+   - `Async TCP`
+   - `ESP Async WebServer`
 5. Open `firmware/water_level_sensor/water_level_sensor.ino`.
 6. Choose **Tools → Board → ESP32 Arduino → ESP32 Dev Module**.
 7. Choose the ESP32 under **Tools → Port**.
@@ -86,7 +95,7 @@ Install the platform and libraries once:
 ```bash
 arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli lib install "Adafruit GFX Library" "Adafruit SSD1306"
+arduino-cli lib install "Adafruit GFX Library" "Adafruit SSD1306" "ArduinoJson" "Async TCP" "ESP Async WebServer"
 ```
 
 Find the board port:
@@ -143,6 +152,7 @@ Run these from the repository root:
 | `npm run start:dashboard` | Run only the dashboard on port 5173 |
 | `npm test` | Typecheck, lint, and production-build the application |
 | `npm run build` | Build the dashboard for production |
+| `npm run build:firmware-assets` | Rebuild and embed the production dashboard in the firmware |
 
 The bridge API is available at `http://localhost:8787`. The dashboard automatically uses port 8787 on the same host from which it was loaded.
 
@@ -176,11 +186,17 @@ Close Arduino Serial Monitor, PlatformIO, PuTTY, screen, and any other program u
 - Upload the firmware from this repository.
 - Confirm the baud rate is `115200`.
 - Open a serial monitor temporarily and look for one JSON object per line.
-- If the OLED cannot initialize, verify that its I2C address is `0x3C`. The current firmware stops if display initialization fails.
+- If the OLED cannot initialize, verify that its I2C address is `0x3C`. The firmware reports the display fault over serial and continues sensor and network operation.
 
 ### Dashboard says the API is offline
 
 Make sure `npm start` is still running and port 8787 is not blocked by a firewall. If the dashboard is on another device, enter the bridge computer’s LAN address (for example `http://192.168.1.20:8787`) in **Device API URL**. You may need to allow Node.js through the host firewall.
+
+### Connecting to the sensor Wi-Fi removes internet access
+
+`WaterLevel-XXXX` is only the temporary setup network and intentionally has no internet route. Use it to give the sensor your normal 2.4 GHz Wi-Fi credentials. It closes within 15 seconds after a successful connection. Reconnect the PC or phone to the selected normal Wi-Fi; both devices then keep normal router internet access and exchange sensor data locally.
+
+If `WaterLevel-XXXX` returns after ten minutes, the saved network could not be reached. Confirm the router is online, that the 2.4 GHz network is available, and that the client-isolation or guest-network setting is disabled.
 
 ## Repository layout
 
@@ -192,9 +208,11 @@ docs/         Additional setup and project notes
 SPEC.md       Product and protocol specification
 ```
 
+Deployment procedures for additional devices and new locations are in [docs/SENSOR_DEPLOYMENT.md](docs/SENSOR_DEPLOYMENT.md).
+
 ## Development status
 
-The USB workflow is working end to end. See [SPEC.md](SPEC.md) for the product contract and planned Wi-Fi support. Contributions are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+The USB workflow is working end to end, and standalone Wi-Fi support is in implementation. Automated application checks cover the bridge and dashboard; final captive-portal, reconnect, and long-duration acceptance checks require the ESP32 hardware. See [SPEC.md](SPEC.md) and [docs/WIFI_MODE_SPEC.md](docs/WIFI_MODE_SPEC.md) for the contracts. Contributions are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## License
 

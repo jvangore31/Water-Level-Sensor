@@ -283,13 +283,13 @@ function ingestLine(line: string) {
 function parseJsonLine(line: string, timestamp: string): ReadingPayload | null {
   try {
     const parsed = JSON.parse(line) as {
-      distanceCm?: number
+      distanceCm?: number | null
       rawDurationUs?: number
       readingState?: ReadingState
       timestamp?: string
     }
 
-    if (typeof parsed.distanceCm !== 'number') {
+    if (typeof parsed.distanceCm !== 'number' && parsed.distanceCm !== null) {
       return null
     }
 
@@ -330,7 +330,10 @@ function recalculateReading(reading: ReadingPayload): ReadingPayload {
       ...reading,
       waterDepthCm: null,
       waterPercent: null,
-      readingState: reading.readingState === 'no_data' ? 'no_data' : 'invalid',
+      readingState:
+        reading.readingState === 'no_data' || reading.readingState === 'out_of_range'
+          ? reading.readingState
+          : 'invalid',
     }
   }
 

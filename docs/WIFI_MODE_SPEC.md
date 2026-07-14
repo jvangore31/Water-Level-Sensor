@@ -1,6 +1,6 @@
 # Wi-Fi Standalone Mode Specification
 
-Status: Proposed
+Status: In implementation
 
 Target milestone: Milestone 3
 
@@ -11,6 +11,14 @@ Parent specification: [`SPEC.md`](../SPEC.md)
 Wi-Fi standalone mode allows the water-level sensor to operate without a USB connection to a computer. The ESP32 is powered from a wall adapter or other suitable supply, connects to a local Wi-Fi network, hosts the dashboard and device API, and sends live readings directly to phones, tablets, and computers on that network.
 
 USB remains supported for initial firmware installation, diagnostics, recovery, and environments where Wi-Fi is unavailable.
+
+### 1.1 Network topology and internet behavior
+
+The sensor's normal operating network is the user's existing local Wi-Fi. The PC, phone, and sensor are peers on that network; the PC does not connect directly to the sensor and the sensor does not replace the router.
+
+`WaterLevel-XXXX` is a temporary, setup-only access point. It intentionally has no internet gateway and must never be presented as the network used for normal monitoring. A phone or PC connected to it may report **No internet** during provisioning. After credentials are accepted, the sensor joins the selected local network, closes the setup access point within 15 seconds, and directs the user to reconnect to that same local network. Normal internet access continues through the user's router while sensor readings travel locally between the browser and ESP32.
+
+The firmware is not required to route, bridge, or provide NAT between the setup access point and the internet.
 
 ## 2. User outcome
 
@@ -61,6 +69,7 @@ This is the normal standalone operating mode.
 - The dashboard, REST API, and WebSocket are served directly by the ESP32.
 - Serial JSON output continues at 115200 baud when USB is attached.
 - Sensor sampling must continue if no browser is connected.
+- Station-only mode is used after a saved network connects; the setup SSID must not remain available during normal operation.
 
 ### 4.2 Provisioning access-point mode
 
@@ -78,6 +87,8 @@ Address: http://192.168.4.1
 ```
 
 `XXXX` is derived from the final four hexadecimal characters of the device MAC address so multiple unconfigured sensors can be distinguished.
+
+This access point is only a local path to the setup page. It has no internet access. Losing internet connectivity while explicitly joined to it is expected and limited to the provisioning session.
 
 The setup page must allow the user to:
 
@@ -106,8 +117,8 @@ USB and Wi-Fi may operate simultaneously. Both transports expose the latest read
 6. User selects a scanned 2.4 GHz network, enters its password, and chooses **Connect**.
 7. The setup page validates the input and shows connection progress without requiring a manual page refresh.
 8. ESP32 saves the credentials only after it successfully joins the selected network.
-9. On success, the setup page shows the chosen hostname, assigned IP address, and a **Go to dashboard** action.
-10. User reconnects to the normal Wi-Fi network if the operating system does not do so automatically.
+9. On success, the setup page shows the chosen hostname, assigned IP address, setup-network shutdown countdown, and a **Go to dashboard** action.
+10. Within 15 seconds of success, the ESP32 disables `WaterLevel-XXXX`. The user reconnects to the selected normal Wi-Fi network if the operating system does not do so automatically.
 11. User opens `http://water-level.local`, the configured hostname, or the displayed IP address.
 12. The full dashboard loads from the ESP32 and begins receiving live readings.
 
@@ -143,7 +154,9 @@ The setup experience consists of three screens:
 - On failure, explain whether the network was not found, authentication failed, or the connection timed out when the platform can distinguish those cases.
 - Allow the user to correct the password or choose another network without resetting or reflashing the device.
 - On success, show `http://<hostname>.local` and the assigned IPv4 address.
-- Explain that the phone or computer may need to reconnect to its normal Wi-Fi.
+- Explain before setup and again on success that `WaterLevel-XXXX` has no internet access and is temporary.
+- Explain that the phone or computer must reconnect to the selected normal Wi-Fi before opening the dashboard.
+- Show how soon the temporary setup access point will close; it must close within 15 seconds after the success response is available to the browser.
 - Provide a **Go to dashboard** button. If direct navigation fails because the client is still attached to the setup network, keep the address visible and provide clear reconnection instructions.
 
 ### 5.2 Captive portal behavior
@@ -326,8 +339,25 @@ In standalone mode, the ESP32 is the source of truth for configuration.
 - Do not erase credentials because of a temporary outage.
 - After 10 minutes without a connection, also enable the provisioning access point while continuing station-mode retries.
 - Disable the provisioning access point after station mode is stable, unless the user explicitly keeps it enabled during setup.
+- When the station connection succeeds, allow at most 15 seconds for the setup browser to receive the result, then disable the provisioning access point and return to station-only mode.
+- If station connectivity fails again during that grace period, cancel access-point shutdown so recovery remains available.
+- Sensing, OLED updates, and USB serial output continue while the device is outside the saved network's range.
+- Offline readings are not persisted for later synchronization in V1; after reconnection, the API exposes the latest sample and resumes live delivery.
+- The browser dashboard is unavailable while neither station Wi-Fi nor the setup access point is reachable; V1 does not provide cloud or public-internet access.
+- Returning within range of the saved network causes automatic reconnection without reprovisioning.
+- Power cycling restarts the 10-minute offline interval before the recovery access point is enabled.
 
-### 12.3 Credential reset
+### 12.3 Moving to a different location
+
+The same firmware image is used at every location; Wi-Fi credentials must not be compiled into a per-location image.
+
+- If the old dashboard is still reachable, the user may reset Wi-Fi before moving and provision at the destination.
+- Otherwise, after 10 continuous minutes without the saved network, the recovery access point allows provisioning at the destination.
+- A replacement SSID, password, and hostname are committed only after a successful station connection. A failed attempt must leave the last working credentials available for retry.
+- Moving between locations does not erase container calibration or alert configuration.
+- Access from outside the local Wi-Fi network is out of scope. Remote monitoring requires a separately specified authenticated and encrypted service.
+
+### 12.4 Credential reset
 
 At least one recovery mechanism must work without network access:
 
@@ -336,7 +366,7 @@ At least one recovery mechanism must work without network access:
 
 The selected mechanism must require deliberate action and must be documented in the main README.
 
-### 12.4 Watchdog
+### 12.5 Watchdog
 
 The firmware should use a watchdog or equivalent recovery mechanism so a web request, failed network operation, or peripheral problem cannot permanently stop sensor sampling.
 
@@ -437,6 +467,7 @@ Wi-Fi standalone mode is complete only when all of the following pass:
 20. A wrong Wi-Fi password produces a recoverable error without erasing previously working credentials or requiring a firmware upload.
 21. A user can retry setup, rescan networks, or enter a hidden SSID without restarting the ESP32.
 22. The success screen displays both the mDNS hostname and assigned IPv4 address.
+23. After successful setup, `WaterLevel-XXXX` disappears within 15 seconds; with the client rejoined to the selected local network, the dashboard is reachable and the client's normal router-provided internet access remains available.
 
 ## 20. Implementation phases
 

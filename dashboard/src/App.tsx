@@ -42,6 +42,15 @@ type PortPayload = {
   friendlyName: string
 }
 
+type NetworkPayload = {
+  configured: boolean
+  connected: boolean
+  ssid: string
+  hostname: string
+  ipAddress: string | null
+  signalDbm: number
+}
+
 const defaultConfig: AppConfig = {
   containerDepthCm: 120,
   containerName: 'Main Tank',
@@ -71,7 +80,10 @@ const defaultReading: ReadingPayload = {
   source: 'mock',
 }
 
-const defaultApiBase = `${window.location.protocol}//${window.location.hostname}:8787`
+const isViteDevelopment = window.location.port === '5173'
+const defaultApiBase = isViteDevelopment
+  ? `${window.location.protocol}//${window.location.hostname}:8787`
+  : window.location.origin
 
 function App() {
   const [apiBase, setApiBase] = useState(defaultApiBase)
@@ -86,6 +98,7 @@ function App() {
   const [connectionMessage, setConnectionMessage] = useState('Contacting the bridge…')
   const [liveState, setLiveState] = useState<LiveState>('connecting')
   const [isSaving, setIsSaving] = useState(false)
+  const [network, setNetwork] = useState<NetworkPayload | null>(null)
   const lastHistoryTimestamp = useRef<string | null>(null)
 
   const acceptReading = (nextReading: ReadingPayload) => {
@@ -117,24 +130,41 @@ function App() {
       fetch(`${apiBase}/api/config`),
       fetch(`${apiBase}/api/status`),
       fetch(`${apiBase}/api/reading`),
-      fetch(`${apiBase}/api/ports`),
     ])
       .then(async (responses) => {
         const failed = responses.find((response) => !response.ok)
         if (failed) throw new Error(`Device API returned ${failed.status}.`)
         return Promise.all(responses.map((response) => response.json()))
       })
-      .then(([configData, statusData, readingData, portsData]) => {
+      .then(([configData, statusData, readingData]) => {
         if (cancelled) return
-        const nextPorts = (portsData as { ports: PortPayload[] }).ports
         const nextStatus = statusData as StatusPayload
         setConfig(configData as AppConfig)
         setStatus(nextStatus)
         acceptReading(readingData as ReadingPayload)
-        setPorts(nextPorts)
-        const usbPort = nextPorts.find((port) => /tty(USB|ACM)/i.test(port.path))
-        setSelectedPort(nextStatus.serialPort ?? usbPort?.path ?? nextPorts[0]?.path ?? '')
+        setSelectedPort(nextStatus.serialPort ?? '')
         setConnectionMessage(`API connected at ${apiBase}.`)
+
+        if (nextStatus.mode === 'usb') {
+          fetch(`${apiBase}/api/ports`)
+            .then((response) => response.ok ? response.json() : { ports: [] })
+            .then((portsData: { ports: PortPayload[] }) => {
+              if (cancelled) return
+              const nextPorts = portsData.ports
+              setPorts(nextPorts)
+              const usbPort = nextPorts.find((port) => /tty(USB|ACM)|COM\d+/i.test(port.path))
+              setSelectedPort(nextStatus.serialPort ?? usbPort?.path ?? nextPorts[0]?.path ?? '')
+            })
+            .catch(() => setPorts([]))
+        } else {
+          setPorts([])
+          fetch(`${apiBase}/api/network`)
+            .then((response) => response.ok ? response.json() : null)
+            .then((networkData: NetworkPayload | null) => {
+              if (!cancelled) setNetwork(networkData)
+            })
+            .catch(() => setNetwork(null))
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return
@@ -267,6 +297,20 @@ function App() {
     }
   }
 
+  const handleWifiReset = async () => {
+    if (!window.confirm('Change Wi-Fi network? The sensor will restart in setup mode. Container settings will be kept.')) return
+    try {
+      await requestJson<{ message: string }>('/api/network/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'RESET_WIFI' }),
+      })
+      setConnectionMessage('Wi-Fi cleared. Join the WaterLevel-XXXX network to configure the sensor.')
+    } catch (error) {
+      setConnectionMessage(error instanceof Error ? error.message : 'Failed to reset Wi-Fi.')
+    }
+  }
+
   const percentLabel = reading.waterPercent === null || reading.readingState !== 'ok' ? '—' : `${reading.waterPercent.toFixed(1)}%`
   const fillPercent = reading.waterPercent === null || reading.readingState !== 'ok' ? 0 : reading.waterPercent
   const updatedLabel = reading.timestamp ? new Date(reading.timestamp).toLocaleString() : 'No reading yet'
@@ -331,8 +375,9 @@ function App() {
         <article className="panel connection-panel">
           <div className="panel-header"><div><p className="eyebrow">Connectivity</p><h2>Device connection</h2></div><span className={`status-badge ${status.status}`}>{status.status}</span></div>
           <div className="connection-summary"><span>Mode<strong>{status.mode.toUpperCase()}</strong></span><span>Firmware<strong>{status.firmwareVersion}</strong></span><span>Payload<strong>{reading.source.toUpperCase()}</strong></span></div>
-          <label>Serial port<select value={selectedPort} onChange={(event) => setSelectedPort(event.target.value)}><option value="">Select a port</option>{ports.map((port) => <option key={port.path} value={port.path}>{port.friendlyName}</option>)}</select></label>
-          <div className="button-row"><button type="button" onClick={handleConnect}>Connect USB</button><button type="button" className="secondary" onClick={handleDisconnect}>Disconnect</button></div>
+          {status.mode === 'wifi' && network && <div className="wifi-summary"><span>Network<strong>{network.ssid || 'Not configured'}</strong></span><span>Signal<strong>{network.connected ? `${network.signalDbm} dBm` : 'Offline'}</strong></span><button type="button" className="secondary" onClick={handleWifiReset}>Change Wi-Fi network</button></div>}
+          {status.mode === 'usb' && <><label>Serial port<select value={selectedPort} onChange={(event) => setSelectedPort(event.target.value)}><option value="">Select a port</option>{ports.map((port) => <option key={port.path} value={port.path}>{port.friendlyName}</option>)}</select></label>
+          <div className="button-row"><button type="button" onClick={handleConnect}>Connect USB</button><button type="button" className="secondary" onClick={handleDisconnect}>Disconnect</button></div></>}
           <form className="api-form" onSubmit={(event) => { event.preventDefault(); setApiBase(draftApiBase.replace(/\/$/, '')) }}><label>Device API URL<input type="url" value={draftApiBase} onChange={(event) => setDraftApiBase(event.target.value)} /></label><button type="submit" className="secondary">Apply</button></form>
           <p className="connection-message">{connectionMessage}</p>
         </article>

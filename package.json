@@ -9,6 +9,7 @@
     "start:bridge": "npm --prefix bridge start",
     "start:dashboard": "npm --prefix dashboard run dev",
     "build": "npm --prefix dashboard run build",
+    "build:firmware-assets": "node scripts/embed-dashboard.mjs",
     "test": "npm --prefix bridge run check && npm --prefix dashboard run lint && npm --prefix dashboard run build"
   },
   "engines": {
