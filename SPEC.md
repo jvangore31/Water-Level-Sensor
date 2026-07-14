@@ -95,6 +95,8 @@ Reason:
 2. Dashboard requests current config and status.
 3. Dashboard subscribes to live readings over WebSocket.
 
+The detailed standalone behavior, provisioning flow, recovery requirements, and acceptance criteria are defined in [`docs/WIFI_MODE_SPEC.md`](docs/WIFI_MODE_SPEC.md).
+
 ### 6.3 USB Mode
 
 1. User starts the local bridge on the PC.
@@ -290,6 +292,8 @@ Water Level Sensor/
 ### Milestone 3
 - add Wi-Fi API and WebSocket to firmware
 - connect dashboard to live device
+- serve the dashboard directly from the ESP32 for PC-independent operation
+- implement provisioning and recovery according to `docs/WIFI_MODE_SPEC.md`
 
 ### Milestone 4
 - refine UI, config persistence, and alert handling

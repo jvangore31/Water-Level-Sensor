@@ -11,7 +11,7 @@ A live water-level dashboard for an ESP32, JSN-SR04T ultrasonic sensor, and SSD1
 - Windows, macOS, and Linux development setup
 - Firmware compile/upload through Arduino IDE or Arduino CLI
 
-Wi-Fi transport is planned but is not implemented yet. Use the local USB bridge for the current version.
+Wi-Fi transport is planned but is not implemented yet. Use the local USB bridge for the current version. The complete standalone design is documented in [`docs/WIFI_MODE_SPEC.md`](docs/WIFI_MODE_SPEC.md).
 
 ## Hardware
 
