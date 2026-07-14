@@ -1,7 +1,9 @@
 # Wi-Fi Standalone Mode Specification
 
-Status: Proposed  
-Target milestone: Milestone 3  
+Status: Proposed
+
+Target milestone: Milestone 3
+
 Parent specification: [`SPEC.md`](../SPEC.md)
 
 ## 1. Purpose
