@@ -1,10 +1,12 @@
 # Wi-Fi Standalone Mode Specification
 
-Status: In implementation
+Status: Implemented; hardened behavior is specified separately
 
 Target milestone: Milestone 3
 
 Parent specification: [`SPEC.md`](../SPEC.md)
+
+Security, maintenance-AP, calibration, reliability, and optional power behavior for firmware 0.3.0 supersede the corresponding V1 requirements in [`REMOTE_DEPLOYMENT_SPEC.md`](REMOTE_DEPLOYMENT_SPEC.md).
 
 ## 1. Purpose
 
@@ -337,7 +339,7 @@ In standalone mode, the ESP32 is the source of truth for configuration.
 - Keep sampling and displaying readings locally.
 - Attempt reconnection using increasing delays capped at 60 seconds.
 - Do not erase credentials because of a temporary outage.
-- After 10 minutes without a connection, also enable the provisioning access point while continuing station-mode retries.
+- After the configured maintenance-AP delay (30 seconds by default), enable the protected maintenance access point while continuing station-mode retries.
 - Disable the provisioning access point after station mode is stable, unless the user explicitly keeps it enabled during setup.
 - When the station connection succeeds, allow at most 15 seconds for the setup browser to receive the result, then disable the provisioning access point and return to station-only mode.
 - If station connectivity fails again during that grace period, cancel access-point shutdown so recovery remains available.

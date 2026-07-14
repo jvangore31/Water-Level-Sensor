@@ -85,8 +85,9 @@ This starts the optional USB workflow. In standalone Wi-Fi mode, open the ESP32'
    - `ESP Async WebServer`
 5. Open `firmware/water_level_sensor/water_level_sensor.ino`.
 6. Choose **Tools → Board → ESP32 Arduino → ESP32 Dev Module**.
-7. Choose the ESP32 under **Tools → Port**.
-8. Click **Upload**.
+7. Choose **Tools → Partition Scheme → Minimal SPIFFS (1.9 MB APP with OTA/128 KB SPIFFS)**.
+8. Choose the ESP32 under **Tools → Port**.
+9. Click **Upload**.
 
 ### Option B: Arduino CLI
 
@@ -107,8 +108,8 @@ arduino-cli board list
 Compile and upload, replacing `YOUR_PORT` with the listed port:
 
 ```bash
-arduino-cli compile --fqbn esp32:esp32:esp32 firmware/water_level_sensor
-arduino-cli upload --fqbn esp32:esp32:esp32 --port YOUR_PORT firmware/water_level_sensor
+arduino-cli compile --fqbn esp32:esp32:esp32 --board-options PartitionScheme=min_spiffs firmware/water_level_sensor
+arduino-cli upload --fqbn esp32:esp32:esp32 --board-options PartitionScheme=min_spiffs --port YOUR_PORT firmware/water_level_sensor
 ```
 
 Port examples are `COM4` on Windows, `/dev/cu.usbserial-0001` on macOS, and `/dev/ttyUSB0` on Linux.
@@ -196,7 +197,7 @@ Make sure `npm start` is still running and port 8787 is not blocked by a firewal
 
 `WaterLevel-XXXX` is only the temporary setup network and intentionally has no internet route. Use it to give the sensor your normal 2.4 GHz Wi-Fi credentials. It closes within 15 seconds after a successful connection. Reconnect the PC or phone to the selected normal Wi-Fi; both devices then keep normal router internet access and exchange sensor data locally.
 
-If `WaterLevel-XXXX` returns after ten minutes, the saved network could not be reached. Confirm the router is online, that the 2.4 GHz network is available, and that the client-isolation or guest-network setting is disabled.
+If the protected `WaterLevel-XXXX` maintenance network appears (after 30 seconds by default), the saved network could not be reached. Join it with the commissioned maintenance-AP password to use the full local dashboard or change Wi-Fi.
 
 ## Repository layout
 
@@ -212,7 +213,7 @@ Deployment procedures for additional devices and new locations are in [docs/SENS
 
 ## Development status
 
-The USB workflow is working end to end, and standalone Wi-Fi support is in implementation. Automated application checks cover the bridge and dashboard; final captive-portal, reconnect, and long-duration acceptance checks require the ESP32 hardware. See [SPEC.md](SPEC.md) and [docs/WIFI_MODE_SPEC.md](docs/WIFI_MODE_SPEC.md) for the contracts. Contributions are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+The USB workflow and hardened standalone Wi-Fi implementation are present. Firmware 0.3.0 adds authenticated local access, a protected offline maintenance dashboard, calibrated filtering, diagnostics, watchdog recovery, and opt-in power controls. Automated application and firmware compilation checks pass; final captive-portal, power-cycle, watchdog-injection, scheduled-sleep, and long-duration acceptance checks require ESP32 hardware. See [SPEC.md](SPEC.md), [docs/WIFI_MODE_SPEC.md](docs/WIFI_MODE_SPEC.md), and [docs/REMOTE_DEPLOYMENT_SPEC.md](docs/REMOTE_DEPLOYMENT_SPEC.md) for the contracts.
 
 ## License
 
