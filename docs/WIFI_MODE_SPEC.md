@@ -102,12 +102,74 @@ USB and Wi-Fi may operate simultaneously. Both transports expose the latest read
 2. User powers the ESP32 from a computer or wall adapter.
 3. With no saved credentials, the ESP32 starts `WaterLevel-XXXX`.
 4. User connects a phone or computer to that network.
-5. A captive setup page opens automatically where supported; `http://192.168.4.1` is the documented fallback.
-6. User chooses a 2.4 GHz network and enters its password.
-7. ESP32 saves the credentials and attempts to join the selected network.
-8. On success, the setup page shows the chosen hostname and instructs the user to reconnect to the normal network.
-9. User opens `http://water-level.local` or the configured hostname.
-10. The dashboard loads from the ESP32 and begins receiving live readings.
+5. A dashboard-style captive setup page opens automatically where supported; `http://192.168.4.1` is the documented fallback.
+6. User selects a scanned 2.4 GHz network, enters its password, and chooses **Connect**.
+7. The setup page validates the input and shows connection progress without requiring a manual page refresh.
+8. ESP32 saves the credentials only after it successfully joins the selected network.
+9. On success, the setup page shows the chosen hostname, assigned IP address, and a **Go to dashboard** action.
+10. User reconnects to the normal Wi-Fi network if the operating system does not do so automatically.
+11. User opens `http://water-level.local`, the configured hostname, or the displayed IP address.
+12. The full dashboard loads from the ESP32 and begins receiving live readings.
+
+### 5.1 Provisioning user interface
+
+The provisioning page is a focused setup version of the dashboard, visually consistent with the main application. It must be usable from a phone without installing an application.
+
+The setup experience consists of three screens:
+
+#### Welcome
+
+- Identify the product as **Water Level Sensor**.
+- Explain that setup connects the sensor to the user's local 2.4 GHz Wi-Fi.
+- Show the device identifier matching the provisioning SSID suffix.
+- Provide one primary **Set up Wi-Fi** action.
+
+#### Choose network
+
+- Display scanned networks ordered by signal strength.
+- Show signal strength and whether each network is secured.
+- Clearly label that only 2.4 GHz networks are supported.
+- Provide **Scan again** and **Enter network manually** actions.
+- Request the Wi-Fi password only after a network is selected.
+- Include a show/hide password control.
+- Allow an optional device name, defaulting to `water-level`.
+- Disable **Connect** until required fields are valid.
+- Never display or log the saved password after submission.
+
+#### Connection result
+
+- Show distinct progress states: saving, connecting, obtaining an address, and ready.
+- Keep the setup access point available while showing a failed connection result.
+- On failure, explain whether the network was not found, authentication failed, or the connection timed out when the platform can distinguish those cases.
+- Allow the user to correct the password or choose another network without resetting or reflashing the device.
+- On success, show `http://<hostname>.local` and the assigned IPv4 address.
+- Explain that the phone or computer may need to reconnect to its normal Wi-Fi.
+- Provide a **Go to dashboard** button. If direct navigation fails because the client is still attached to the setup network, keep the address visible and provide clear reconnection instructions.
+
+### 5.2 Captive portal behavior
+
+- While provisioning is active, common operating-system connectivity-check requests should redirect to the setup page.
+- DNS queries received on the setup network should resolve to `192.168.4.1` where supported by the captive portal implementation.
+- The complete setup page must work without internet access or externally hosted fonts, scripts, styles, or images.
+- The setup page must remain reachable at `http://192.168.4.1` even when automatic captive-portal detection does not work.
+- The ESP32 must not require the user to type its IP address when the operating system successfully opens the captive portal.
+- Provisioning HTTP requests must use bounded sizes and timeouts so malformed clients cannot stop sensor sampling.
+
+### 5.3 Setup from the USB dashboard
+
+When the ESP32 is connected by USB, the normal dashboard should offer an additional **Set up sensor Wi-Fi** action. This provides a convenient alternative but is not required for phone-only first-run setup.
+
+The USB setup flow uses a bidirectional serial command protocol to:
+
+- request a Wi-Fi scan,
+- submit an SSID, password, and hostname,
+- receive connection progress,
+- report the final hostname and IP address,
+- reset saved network credentials after confirmation.
+
+Wi-Fi passwords submitted through USB must be treated as write-only values. The ESP32 and bridge must never return the stored password. The serial provisioning command protocol must be specified separately before implementation so it cannot be confused with sensor-reading JSON lines.
+
+The captive setup page remains the primary and required provisioning path because it works when the device is powered from a wall adapter and does not require the Node.js bridge.
 
 ## 6. Network requirements
 
@@ -370,6 +432,11 @@ Wi-Fi standalone mode is complete only when all of the following pass:
 15. USB bridge mode continues to work with the same serial contract.
 16. The firmware and embedded dashboard fit within the selected flash partition with documented free space.
 17. A 24-hour hardware test completes without a crash, memory exhaustion, or stale dashboard reading.
+18. First-time setup can be completed from a current iOS or Android phone without a computer or installed application.
+19. The captive setup page works without an internet connection and remains directly available at `192.168.4.1`.
+20. A wrong Wi-Fi password produces a recoverable error without erasing previously working credentials or requiring a firmware upload.
+21. A user can retry setup, rescan networks, or enter a hidden SSID without restarting the ESP32.
+22. The success screen displays both the mDNS hostname and assigned IPv4 address.
 
 ## 20. Implementation phases
 
@@ -395,9 +462,11 @@ Wi-Fi standalone mode is complete only when all of the following pass:
 ### Phase 4: Provisioning and recovery
 
 - Add the setup access point and captive setup page.
+- Implement the welcome, network selection, progress, failure, and success screens from Section 5.
 - Add credential persistence and reset behavior.
 - Add OLED setup and recovery information.
 - Test failed credentials, router outages, and network changes.
+- Add optional USB-dashboard provisioning after the bidirectional serial command protocol is specified.
 
 ### Phase 5: Reliability validation
 
