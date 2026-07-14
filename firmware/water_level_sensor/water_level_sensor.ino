@@ -29,7 +29,7 @@
 #define WIFI_CONNECT_TIMEOUT_MS 20000UL
 #define WIFI_AP_FALLBACK_MS 30000UL
 #define WIFI_SETUP_AP_SHUTDOWN_MS 15000UL
-#define FIRMWARE_VERSION "0.3.1"
+#define FIRMWARE_VERSION "0.3.2"
 #define CONFIG_SCHEMA_VERSION 2
 #define BATTERY_ADC_PIN 34
 #ifndef WATER_LEVEL_BOOTSTRAP_CREDENTIAL
@@ -205,7 +205,9 @@ void loop() {
   }
 
   const uint32_t staleAfter = max((uint32_t)(config.sampleIntervalSeconds * 3000.0f), 5000UL);
-  if (latestReading.acceptedAt > 0 && latestReading.state == "ok" && now - latestReading.acceptedAt > staleAfter) {
+  const uint32_t freshnessNow = millis();
+  if (latestReading.acceptedAt > 0 && latestReading.state == "ok" &&
+      (int32_t)(freshnessNow - latestReading.acceptedAt) > (int32_t)staleAfter) {
     latestReading.state = "stale";
     broadcast("reading", readingJson());
     broadcast("status", statusJson());
