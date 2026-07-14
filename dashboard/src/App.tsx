@@ -131,13 +131,6 @@ const defaultApiBase = isViteDevelopment
   : window.location.origin
 
 function App() {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null)
-  const [setupRequired, setSetupRequired] = useState(false)
-  const [csrfToken, setCsrfToken] = useState('')
-  const [loginPassword, setLoginPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [apPassword, setApPassword] = useState('')
-  const [authMessage, setAuthMessage] = useState('Enter the device administrator password.')
   const [apiBase, setApiBase] = useState(defaultApiBase)
   const [draftApiBase, setDraftApiBase] = useState(defaultApiBase)
   const [config, setConfig] = useState<AppConfig>(defaultConfig)
@@ -167,8 +160,7 @@ function App() {
 
   const requestJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers)
-    if (init?.method && init.method !== 'GET' && csrfToken) headers.set('X-Water-Level-CSRF', csrfToken)
-    const response = await fetch(`${apiBase}${path}`, { ...init, headers, credentials: 'include' })
+    const response = await fetch(`${apiBase}${path}`, { ...init, headers })
     const data: unknown = await response.json()
     if (!response.ok) {
       const detail =
@@ -181,36 +173,6 @@ function App() {
   }
 
   useEffect(() => {
-    fetch(`${apiBase}/api/auth/session`, { credentials: 'include' })
-      .then(async (response) => {
-        if (response.status === 404) return { authenticated: true, setupRequired: false, csrfToken: '' }
-        if (!response.ok) throw new Error('Unable to check device login.')
-        return response.json() as Promise<{ authenticated: boolean; setupRequired: boolean; csrfToken?: string }>
-      })
-      .then((session) => { setAuthenticated(session.authenticated); setSetupRequired(session.setupRequired); setCsrfToken(session.csrfToken ?? '') })
-      .catch(() => { setAuthenticated(true); setSetupRequired(false) })
-  }, [apiBase])
-
-  const handleLogin = async (event: FormEvent) => {
-    event.preventDefault()
-    try {
-      const session = await requestJson<{ authenticated: boolean; setupRequired: boolean; csrfToken: string }>('/api/auth/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: loginPassword }),
-      })
-      setCsrfToken(session.csrfToken); setSetupRequired(session.setupRequired); setAuthenticated(true); setLoginPassword('')
-    } catch (error) { setAuthMessage(error instanceof Error ? error.message : 'Login failed.') }
-  }
-
-  const handleInitialCredentials = async (event: FormEvent) => {
-    event.preventDefault()
-    try {
-      await requestJson('/api/auth/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newPassword, maintenanceApPassword: apPassword }) })
-      setSetupRequired(false); setNewPassword(''); setApPassword(''); setAuthMessage('Credentials saved.')
-    } catch (error) { setAuthMessage(error instanceof Error ? error.message : 'Could not save credentials.') }
-  }
-
-  useEffect(() => {
-    if (!authenticated || setupRequired) return
     let cancelled = false
     setLiveState('connecting')
     setConnectionMessage(`Contacting ${apiBase}…`)
@@ -271,10 +233,9 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [apiBase, authenticated, setupRequired])
+  }, [apiBase])
 
   useEffect(() => {
-    if (!authenticated || setupRequired) return
     let socket: WebSocket | null = null
     let retryTimer: number | undefined
     let stopped = false
@@ -317,7 +278,7 @@ function App() {
       window.clearTimeout(retryTimer)
       socket?.close()
     }
-  }, [apiBase, authenticated, setupRequired])
+  }, [apiBase])
 
   const alertTone = useMemo(() => {
     if (reading.readingState !== 'ok' || reading.waterPercent === null) return 'neutral'
@@ -425,18 +386,6 @@ function App() {
     } catch (error) { setConnectionMessage(error instanceof Error ? error.message : 'Could not start Wi-Fi setup.') }
   }
 
-  const handleCredentialRotation = async (event: FormEvent) => {
-    event.preventDefault()
-    try {
-      await requestJson('/api/auth/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newPassword, maintenanceApPassword: apPassword }) })
-      setNewPassword(''); setApPassword(''); setConnectionMessage('Administrator and maintenance AP credentials updated.')
-    } catch (error) { setConnectionMessage(error instanceof Error ? error.message : 'Credential update failed.') }
-  }
-
-  const handleLogout = async () => {
-    try { await requestJson('/api/auth/logout', { method: 'POST' }) } catch { /* legacy bridge or expired session */ }
-    setAuthenticated(false); setCsrfToken('')
-  }
 
   const percentLabel = reading.waterPercent === null || reading.readingState !== 'ok' ? '—' : `${reading.waterPercent.toFixed(1)}%`
   const fillPercent = reading.waterPercent === null || reading.readingState !== 'ok' ? 0 : reading.waterPercent
@@ -445,10 +394,6 @@ function App() {
   const measurement = config.measurement ?? defaultConfig.measurement!
   const power = config.power ?? defaultConfig.power!
   const networkConfig = config.network ?? defaultConfig.network!
-
-  if (authenticated === null) return <main className="auth-shell"><section className="auth-card"><h1>Waterwatch</h1><p>Checking device security…</p></section></main>
-  if (!authenticated) return <main className="auth-shell"><form className="auth-card" onSubmit={handleLogin}><p className="eyebrow">Protected device</p><h1>Sign in</h1><p>{authMessage}</p><label>Password<input type="password" autoComplete="current-password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} required /></label><button type="submit">Sign in</button><small>New devices use the deployment bootstrap credential once.</small></form></main>
-  if (setupRequired) return <main className="auth-shell"><form className="auth-card" onSubmit={handleInitialCredentials}><p className="eyebrow">Commission device</p><h1>Replace bootstrap access</h1><p>Create two different credentials. The maintenance AP password is needed to join the sensor directly when the router is unavailable.</p><label>Administrator password<input type="password" minLength={10} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label><label>Maintenance AP password<input type="password" minLength={8} value={apPassword} onChange={(event) => setApPassword(event.target.value)} required /></label><button type="submit">Save device credentials</button><small>{authMessage}</small></form></main>
 
   return (
     <main className="app-shell">
@@ -461,7 +406,6 @@ function App() {
           <span className={`live-dot ${liveState}`} />
           <span>{liveState === 'live' ? 'Live updates' : liveState === 'connecting' ? 'Connecting' : 'Offline'}</span>
           <span className={`status-badge ${status.status}`}>{status.status}</span>
-          {config.schemaVersion && <button type="button" className="text-button" onClick={handleLogout}>Log out</button>}
         </div>
       </header>
 
@@ -541,7 +485,7 @@ function App() {
           <div className="button-row"><button type="button" onClick={handleConnect}>Connect USB</button><button type="button" className="secondary" onClick={handleDisconnect}>Disconnect</button></div></>}
           <form className="api-form" onSubmit={(event) => { event.preventDefault(); setApiBase(draftApiBase.replace(/\/$/, '')) }}><label>Device API URL<input type="url" value={draftApiBase} onChange={(event) => setDraftApiBase(event.target.value)} /></label><button type="submit" className="secondary">Apply</button></form>
           <p className="connection-message">{connectionMessage}</p>
-          {config.schemaVersion && <><button type="button" className="secondary" onClick={loadDiagnostics}>Load diagnostics</button>{diagnostics && <pre className="diagnostics">{JSON.stringify(diagnostics, null, 2)}</pre>}<form className="network-form" onSubmit={handleCredentialRotation}><strong>Rotate device credentials</strong><label>New administrator password<input type="password" minLength={10} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label><label>New maintenance AP password<input type="password" minLength={8} value={apPassword} onChange={(event) => setApPassword(event.target.value)} required /></label><button type="submit" className="secondary">Update credentials</button></form></>}
+          {config.schemaVersion && <><button type="button" className="secondary" onClick={loadDiagnostics}>Load diagnostics</button>{diagnostics && <pre className="diagnostics">{JSON.stringify(diagnostics, null, 2)}</pre>}</>}
         </article>
       </section>
 

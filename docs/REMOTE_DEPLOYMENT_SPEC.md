@@ -2,7 +2,7 @@
 
 ## 1. Status and purpose
 
-This document is the approved design baseline for firmware `0.3.0`. The firmware and embedded dashboard implementation is present in the repository. Hardware-only acceptance work, including power-cycle, watchdog-injection, multi-client, scheduled-sleep cycle, and seven-day soak tests, remains pending.
+This document records the original hardened design baseline. Firmware `0.4.0` intentionally removes dashboard authentication and maintenance-AP passwords at the owner's direction. Router Wi-Fi credentials remain supported. Hardware-only acceptance work, including power-cycle, watchdog-injection, multi-client, scheduled-sleep cycle, and seven-day soak tests, remains pending.
 
 The purpose of this release is to make the water-level sensor safer and more dependable at a location with intermittent or unavailable internet access. It covers:
 

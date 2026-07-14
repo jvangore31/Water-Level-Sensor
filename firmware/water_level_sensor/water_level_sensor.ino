@@ -29,7 +29,7 @@
 #define WIFI_CONNECT_TIMEOUT_MS 20000UL
 #define WIFI_AP_FALLBACK_MS 30000UL
 #define WIFI_SETUP_AP_SHUTDOWN_MS 15000UL
-#define FIRMWARE_VERSION "0.3.2"
+#define FIRMWARE_VERSION "0.4.0"
 #define CONFIG_SCHEMA_VERSION 2
 #define BATTERY_ADC_PIN 34
 #ifndef WATER_LEVEL_BOOTSTRAP_CREDENTIAL
@@ -178,7 +178,7 @@ void loop() {
     if (WiFi.status() == WL_CONNECTED) stopProvisioningAp();
     stopApAt = 0;
   }
-  if (apActive && adminVerifier.length() && config.maintenanceApIdleTimeoutSeconds > 0 &&
+  if (apActive && hasSavedNetwork && config.maintenanceApIdleTimeoutSeconds > 0 &&
       lastAuthenticatedActivity > 0 && now - lastAuthenticatedActivity >= config.maintenanceApIdleTimeoutSeconds * 1000UL) {
     maintenanceApSuppressed = true;
     stopProvisioningAp();
@@ -254,6 +254,10 @@ void loadSettings() {
   adminSalt = preferences.getString("adminSalt", "");
   adminVerifier = preferences.getString("adminHash", "");
   maintenanceApPassword = preferences.getString("apPassword", "");
+  if (adminSalt.length() || adminVerifier.length() || maintenanceApPassword.length()) {
+    preferences.remove("adminSalt"); preferences.remove("adminHash"); preferences.remove("apPassword");
+    adminSalt = ""; adminVerifier = ""; maintenanceApPassword = "";
+  }
   bootCount = preferences.getUInt("bootCount", 0) + 1;
   watchdogResetCount = preferences.getUInt("wdtCount", 0);
   brownoutResetCount = preferences.getUInt("brownCount", 0);
@@ -311,11 +315,10 @@ void startWiFi() {
 void startProvisioningAp() {
   if (apActive) return;
   WiFi.mode(WIFI_AP_STA);
-  const String apPassword = maintenanceApPassword.length() >= 8 ? maintenanceApPassword : WATER_LEVEL_BOOTSTRAP_CREDENTIAL;
-  WiFi.softAP(apSsid.c_str(), apPassword.c_str());
+  WiFi.softAP(apSsid.c_str());
   dnsServer.start(53, "*", WiFi.softAPIP());
   apActive = true;
-  if (adminVerifier.length()) lastAuthenticatedActivity = millis();
+  lastAuthenticatedActivity = millis();
   provisioningState = "idle";
   provisioningMessage = "Choose a Wi-Fi network.";
   Serial.printf("{\"event\":\"provisioning\",\"ssid\":\"%s\",\"url\":\"http://192.168.4.1\"}\n", apSsid.c_str());
@@ -459,17 +462,8 @@ AuthSession* requestSession(AsyncWebServerRequest* request) {
 }
 
 bool sessionValid(AsyncWebServerRequest* request, bool stateChanging = false) {
-  AuthSession* session = requestSession(request);
-  if (!session) return false;
-  if (stateChanging) {
-    if (!request->hasHeader("X-Water-Level-CSRF") || request->getHeader("X-Water-Level-CSRF")->value() != session->csrf) return false;
-    if (request->hasHeader("Origin")) {
-      const String origin = request->getHeader("Origin")->value();
-      if (origin.indexOf(request->host()) < 0) return false;
-    }
-  }
-  session->lastSeenAt = millis();
-  lastAuthenticatedActivity = session->lastSeenAt;
+  (void)request; (void)stateChanging;
+  lastAuthenticatedActivity = millis();
   return true;
 }
 
@@ -499,7 +493,7 @@ void startSession(AsyncWebServerRequest* request) {
 
 void configureWebServer() {
   websocket.handleHandshake([](AsyncWebServerRequest* request) {
-    return requestSession(request) != nullptr;
+    (void)request; return true;
   });
   websocket.onEvent([](AsyncWebSocket*, AsyncWebSocketClient* client, AwsEventType type, void*, uint8_t*, size_t) {
     if (type == WS_EVT_CONNECT) sendInitialWebSocketState(client);
@@ -507,7 +501,7 @@ void configureWebServer() {
   server.addHandler(&websocket);
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-    if (apActive && WiFi.status() != WL_CONNECTED && !adminVerifier.length()) sendProvisioningPage(request);
+    if (apActive && WiFi.status() != WL_CONNECTED && !hasSavedNetwork) sendProvisioningPage(request);
     else sendDashboard(request);
   });
   server.on("/generate_204", HTTP_GET, sendProvisioningPage);
@@ -517,12 +511,7 @@ void configureWebServer() {
   server.on("/ncsi.txt", HTTP_GET, sendProvisioningPage);
 
   server.on("/api/auth/session", HTTP_GET, [](AsyncWebServerRequest* request) {
-    const bool valid = sessionValid(request);
-    String output = "{\"authenticated\":" + String(valid ? "true" : "false") +
-      ",\"setupRequired\":" + String(adminVerifier.length() ? "false" : "true");
-    if (valid) output += ",\"csrfToken\":\"" + requestSession(request)->csrf + "\"";
-    output += "}";
-    sendJson(request, output);
+    sendJson(request, "{\"authenticated\":true,\"setupRequired\":false,\"csrfToken\":\"\"}");
   });
 
   auto* loginHandler = new AsyncCallbackJsonWebHandler("/api/auth/login", [](AsyncWebServerRequest* request, JsonVariant& json) {
@@ -551,15 +540,7 @@ void configureWebServer() {
   });
 
   auto* passwordHandler = new AsyncCallbackJsonWebHandler("/api/auth/password", [](AsyncWebServerRequest* request, JsonVariant& json) {
-    if (!requireSession(request, true)) return;
-    const String password = json["newPassword"] | "";
-    const String apPassword = json["maintenanceApPassword"] | "";
-    if (password.length() < 10 || apPassword.length() < 8 || apPassword == password || apPassword == WATER_LEVEL_BOOTSTRAP_CREDENTIAL) {
-      request->send(400, "application/json", "{\"message\":\"Use an administrator password of at least 10 characters and a different AP password of at least 8 characters.\"}"); return;
-    }
-    adminSalt = randomHex(16); adminVerifier = passwordHash(password, adminSalt); maintenanceApPassword = apPassword;
-    preferences.putString("adminSalt", adminSalt); preferences.putString("adminHash", adminVerifier); preferences.putString("apPassword", maintenanceApPassword);
-    request->send(200, "application/json", "{\"message\":\"Credentials saved. The maintenance AP password applies after restart.\"}");
+    (void)json; request->send(410, "application/json", "{\"message\":\"Device passwords are disabled.\"}");
   });
   passwordHandler->setMethod(HTTP_PUT); passwordHandler->setMaxContentLength(384); server.addHandler(passwordHandler);
 
@@ -636,7 +617,7 @@ void configureWebServer() {
   factoryResetHandler->setMethod(HTTP_POST); factoryResetHandler->setMaxContentLength(128); server.addHandler(factoryResetHandler);
 
   server.onNotFound([](AsyncWebServerRequest* request) {
-    if (apActive && !adminVerifier.length()) sendProvisioningPage(request);
+    if (apActive && !hasSavedNetwork) sendProvisioningPage(request);
     else if (!request->url().startsWith("/api/")) sendDashboard(request);
     else request->send(404, "application/json", "{\"message\":\"Not found.\"}");
   });
@@ -909,7 +890,7 @@ String statusJson() {
   document["maintenanceApActive"] = apActive;
   document["scheduledSleepEnabled"] = config.powerSavingEnabled && config.scheduledSleepEnabled;
   document["clockSynchronized"] = time(nullptr) >= 1700000000;
-  document["authenticationRequired"] = true;
+  document["authenticationRequired"] = false;
   if (config.batteryMonitoringEnabled) {
     const float voltage = analogReadMilliVolts(BATTERY_ADC_PIN) / 1000.0f * 2.0f * config.batteryCalibrationMultiplier;
     document["batteryVoltage"] = voltage;

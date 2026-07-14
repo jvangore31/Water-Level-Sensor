@@ -22,12 +22,11 @@ Do not add a Wi-Fi name or password to the source code. Each ESP32 stores its ow
 For a new or Wi-Fi-reset sensor:
 
 1. Power the sensor and join its unique `WaterLevel-XXXX` setup network.
-2. Join with the deployment bootstrap credential and open `http://192.168.4.1` if the captive setup page does not open automatically.
+2. Join the open setup network and open `http://192.168.4.1` if the captive setup page does not open automatically.
 3. Select the same 2.4 GHz local network used by the viewing phone or computer.
 4. Choose a unique hostname when deploying multiple sensors, such as `water-level-garage` or `water-level-cistern`.
 5. After setup succeeds, reconnect the phone or computer to the normal network.
 6. Open the hostname shown by setup, for example `http://water-level-garage.local`, or use the displayed IPv4 address.
-7. Sign in with the bootstrap credential, then create a unique administrator password and a different maintenance-AP password. Record both in the controlled deployment handoff.
 
 The temporary setup network has no internet route and closes within 15 seconds of a successful connection. Normal monitoring occurs through the existing router, not through `WaterLevel-XXXX`.
 
@@ -40,8 +39,8 @@ When its saved Wi-Fi is unavailable, the firmware:
 1. Continues measuring water level, updating the OLED, and emitting USB serial readings.
 2. Marks network access as disconnected and retries the saved Wi-Fi with increasing delays, capped at 60 seconds.
 3. Keeps the saved credentials; a temporary outage does not erase them.
-4. Starts the protected `WaterLevel-XXXX` maintenance AP after 30 seconds by default while continuing to retry the saved network.
-5. Allows an administrator to view the complete dashboard or provision a different 2.4 GHz network at `http://192.168.4.1`.
+4. Starts the open `WaterLevel-XXXX` maintenance AP after 30 seconds by default while continuing to retry the saved network.
+5. Allows a nearby user to view the complete dashboard or provision a different 2.4 GHz network at `http://192.168.4.1`.
 6. Saves the replacement credentials only after the new connection succeeds, then closes the setup network.
 
 If the sensor comes back within range of its saved Wi-Fi, it reconnects automatically. Power-cycling starts the 10-minute recovery timer again.
@@ -54,7 +53,7 @@ Use one of these methods:
 
 - While the current dashboard is reachable, choose **Change Wi-Fi network** and confirm the reset.
 - Over trusted physical USB serial, send `WIFI_RESET WaterLevel-XXXX` at 115200 baud, using the exact AP name shown by the device.
-- At a new location, wait for the configured AP delay, join the protected `WaterLevel-XXXX` network, and sign in. This method retains the previous credentials until the replacement network connects successfully.
+- At a new location, wait for the configured AP delay and join the open `WaterLevel-XXXX` network. This method retains the previous router credentials until the replacement network connects successfully.
 
 The first two reset methods erase only the Wi-Fi SSID and password. Container depth, tank name, and alert thresholds are retained.
 

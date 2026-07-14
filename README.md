@@ -197,7 +197,7 @@ Make sure `npm start` is still running and port 8787 is not blocked by a firewal
 
 `WaterLevel-XXXX` is only the temporary setup network and intentionally has no internet route. Use it to give the sensor your normal 2.4 GHz Wi-Fi credentials. It closes within 15 seconds after a successful connection. Reconnect the PC or phone to the selected normal Wi-Fi; both devices then keep normal router internet access and exchange sensor data locally.
 
-If the protected `WaterLevel-XXXX` maintenance network appears (after 30 seconds by default), the saved network could not be reached. Join it with the commissioned maintenance-AP password to use the full local dashboard or change Wi-Fi.
+If the open `WaterLevel-XXXX` maintenance network appears (after 30 seconds by default), the saved network could not be reached. Join it to use the full local dashboard or change Wi-Fi.
 
 ## Repository layout
 
