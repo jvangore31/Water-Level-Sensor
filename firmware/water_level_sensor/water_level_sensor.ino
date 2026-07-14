@@ -29,7 +29,7 @@
 #define WIFI_CONNECT_TIMEOUT_MS 20000UL
 #define WIFI_AP_FALLBACK_MS 30000UL
 #define WIFI_SETUP_AP_SHUTDOWN_MS 15000UL
-#define FIRMWARE_VERSION "0.3.0"
+#define FIRMWARE_VERSION "0.3.1"
 #define CONFIG_SCHEMA_VERSION 2
 #define BATTERY_ADC_PIN 34
 #ifndef WATER_LEVEL_BOOTSTRAP_CREDENTIAL
@@ -131,10 +131,13 @@ uint32_t bootStartedAt = 0;
 uint32_t lastAuthenticatedActivity = 0;
 bool displaySleeping = false;
 bool maintenanceApSuppressed = false;
-String sessionToken;
-String csrfToken;
-uint32_t sessionStartedAt = 0;
-uint32_t sessionLastSeenAt = 0;
+struct AuthSession {
+  String token;
+  String csrf;
+  uint32_t startedAt = 0;
+  uint32_t lastSeenAt = 0;
+};
+AuthSession authSessions[4];
 uint8_t loginFailures = 0;
 uint32_t loginLockedUntil = 0;
 
@@ -181,9 +184,6 @@ void loop() {
     stopProvisioningAp();
   }
   websocket.cleanupClients();
-  if (sessionToken.length() && (now - sessionLastSeenAt > 1800000UL || now - sessionStartedAt > 43200000UL)) {
-    sessionToken = ""; csrfToken = ""; websocket.closeAll();
-  }
   handleWiFiState(now);
   handleSerialCommands();
 
@@ -447,19 +447,27 @@ String cookieValue(AsyncWebServerRequest* request, const String& name) {
   return cookie.substring(start, end < 0 ? cookie.length() : end);
 }
 
-bool sessionValid(AsyncWebServerRequest* request, bool stateChanging = false) {
+AuthSession* requestSession(AsyncWebServerRequest* request) {
   const uint32_t now = millis();
-  if (!sessionToken.length() || cookieValue(request, "wl_session") != sessionToken ||
-      now - sessionLastSeenAt > 1800000UL || now - sessionStartedAt > 43200000UL) return false;
+  const String token = cookieValue(request, "wl_session");
+  for (AuthSession& session : authSessions) {
+    if (session.token.length() && session.token == token && now - session.lastSeenAt <= 1800000UL && now - session.startedAt <= 43200000UL) return &session;
+  }
+  return nullptr;
+}
+
+bool sessionValid(AsyncWebServerRequest* request, bool stateChanging = false) {
+  AuthSession* session = requestSession(request);
+  if (!session) return false;
   if (stateChanging) {
-    if (!request->hasHeader("X-Water-Level-CSRF") || request->getHeader("X-Water-Level-CSRF")->value() != csrfToken) return false;
+    if (!request->hasHeader("X-Water-Level-CSRF") || request->getHeader("X-Water-Level-CSRF")->value() != session->csrf) return false;
     if (request->hasHeader("Origin")) {
       const String origin = request->getHeader("Origin")->value();
       if (origin.indexOf(request->host()) < 0) return false;
     }
   }
-  sessionLastSeenAt = now;
-  lastAuthenticatedActivity = now;
+  session->lastSeenAt = millis();
+  lastAuthenticatedActivity = session->lastSeenAt;
   return true;
 }
 
@@ -470,20 +478,26 @@ bool requireSession(AsyncWebServerRequest* request, bool stateChanging = false) 
 }
 
 void startSession(AsyncWebServerRequest* request) {
-  sessionToken = randomHex(24);
-  csrfToken = randomHex(16);
-  sessionStartedAt = sessionLastSeenAt = lastAuthenticatedActivity = millis();
+  AuthSession* selected = nullptr;
+  for (AuthSession& session : authSessions) if (!session.token.length()) { selected = &session; break; }
+  if (!selected) {
+    selected = &authSessions[0];
+    for (AuthSession& session : authSessions) if (session.lastSeenAt < selected->lastSeenAt) selected = &session;
+  }
+  selected->token = randomHex(24);
+  selected->csrf = randomHex(16);
+  selected->startedAt = selected->lastSeenAt = lastAuthenticatedActivity = millis();
   AsyncWebServerResponse* response = request->beginResponse(200, "application/json",
     "{\"authenticated\":true,\"setupRequired\":" + String(adminVerifier.length() ? "false" : "true") +
-    ",\"csrfToken\":\"" + csrfToken + "\"}");
-  response->addHeader("Set-Cookie", "wl_session=" + sessionToken + "; HttpOnly; SameSite=Strict; Path=/");
+    ",\"csrfToken\":\"" + selected->csrf + "\"}");
+  response->addHeader("Set-Cookie", "wl_session=" + selected->token + "; HttpOnly; SameSite=Strict; Path=/");
   response->addHeader("Cache-Control", "no-store");
   request->send(response);
 }
 
 void configureWebServer() {
   websocket.handleHandshake([](AsyncWebServerRequest* request) {
-    return sessionToken.length() && cookieValue(request, "wl_session") == sessionToken;
+    return requestSession(request) != nullptr;
   });
   websocket.onEvent([](AsyncWebSocket*, AsyncWebSocketClient* client, AwsEventType type, void*, uint8_t*, size_t) {
     if (type == WS_EVT_CONNECT) sendInitialWebSocketState(client);
@@ -504,7 +518,7 @@ void configureWebServer() {
     const bool valid = sessionValid(request);
     String output = "{\"authenticated\":" + String(valid ? "true" : "false") +
       ",\"setupRequired\":" + String(adminVerifier.length() ? "false" : "true");
-    if (valid) output += ",\"csrfToken\":\"" + csrfToken + "\"";
+    if (valid) output += ",\"csrfToken\":\"" + requestSession(request)->csrf + "\"";
     output += "}";
     sendJson(request, output);
   });
@@ -527,7 +541,8 @@ void configureWebServer() {
 
   server.on("/api/auth/logout", HTTP_POST, [](AsyncWebServerRequest* request) {
     if (!requireSession(request, true)) return;
-    sessionToken = ""; csrfToken = "";
+    AuthSession* session = requestSession(request);
+    if (session) session->token = "";
     AsyncWebServerResponse* response = request->beginResponse(200, "application/json", "{\"message\":\"Logged out.\"}");
     response->addHeader("Set-Cookie", "wl_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/");
     request->send(response);
