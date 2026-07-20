@@ -45,7 +45,7 @@ struct AppConfig {
   String calibrationMode = "container_depth";
   float fullDistanceCm = NAN;
   float emptyDistanceCm = NAN;
-  float minimumValidDistanceCm = 20.0f;
+  float minimumValidDistanceCm = 30.0f;
   float maximumValidDistanceCm = 450.0f;
   uint8_t medianWindowSize = 5;
   float maximumStepCm = 25.0f;
