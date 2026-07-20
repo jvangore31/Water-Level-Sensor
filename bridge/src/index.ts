@@ -56,6 +56,7 @@ const configSchema = z.object({
   warningThresholdPercent: z.number().min(0).max(100),
   criticalThresholdPercent: z.number().min(0).max(100),
   preferredMode: z.enum(['wifi', 'usb']),
+  sensorMountingOffsetCm: z.number().min(0).default(0),
 })
 
 const defaultConfig: AppConfig = {
@@ -64,6 +65,7 @@ const defaultConfig: AppConfig = {
   warningThresholdPercent: 35,
   criticalThresholdPercent: 15,
   preferredMode: 'usb',
+  sensorMountingOffsetCm: 0,
 }
 
 let config = loadConfig()
@@ -346,7 +348,9 @@ function recalculateReading(reading: ReadingPayload): ReadingPayload {
     }
   }
 
-  if (reading.distanceCm > config.containerDepthCm) {
+  const adjustedDistanceCm = reading.distanceCm - config.sensorMountingOffsetCm
+  
+  if (adjustedDistanceCm > config.containerDepthCm) {
     return {
       ...reading,
       waterDepthCm: 0,
@@ -355,7 +359,7 @@ function recalculateReading(reading: ReadingPayload): ReadingPayload {
     }
   }
 
-  const waterDepthCm = Math.max(config.containerDepthCm - reading.distanceCm, 0)
+  const waterDepthCm = Math.max(config.containerDepthCm - adjustedDistanceCm, 0)
   const waterPercent = clamp((waterDepthCm / config.containerDepthCm) * 100, 0, 100)
 
   return {

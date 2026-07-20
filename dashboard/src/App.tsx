@@ -14,6 +14,7 @@ type AppConfig = {
   warningThresholdPercent: number
   criticalThresholdPercent: number
   preferredMode: Mode
+  sensorMountingOffsetCm: number
   measurement?: {
     calibrationMode: 'container_depth' | 'full_empty'
     fullDistanceCm: number | null
@@ -91,6 +92,7 @@ const defaultConfig: AppConfig = {
   warningThresholdPercent: 35,
   criticalThresholdPercent: 15,
   preferredMode: 'usb',
+  sensorMountingOffsetCm: 0,
   measurement: { calibrationMode: 'container_depth', fullDistanceCm: null, emptyDistanceCm: null, minimumValidDistanceCm: 20, maximumValidDistanceCm: 450, medianWindowSize: 5, maximumStepCm: 25, stepConfirmationSamples: 3, invalidSamplesBeforeFault: 3 },
   power: { powerSavingEnabled: false, sampleIntervalSeconds: 0.5, displayTimeoutSeconds: 0, scheduledSleepEnabled: false, awakeWindowSeconds: 30, batteryMonitoringEnabled: false, batteryLowVoltage: 3.4, batteryCriticalVoltage: 3.2, batteryCalibrationMultiplier: 1 },
   network: { maintenanceApEnabled: true, maintenanceApDelaySeconds: 30, maintenanceApIdleTimeoutSeconds: 900 },
@@ -148,6 +150,7 @@ function App() {
   const [wifiSsid, setWifiSsid] = useState('')
   const [wifiPassword, setWifiPassword] = useState('')
   const [wifiHostname, setWifiHostname] = useState('water-level')
+  const [collapsibleSections, setCollapsibleSections] = useState({ settings: true, connection: true, history: true })
   const lastHistoryKey = useRef<string | null>(null)
 
   const acceptReading = (nextReading: ReadingPayload) => {
@@ -440,44 +443,24 @@ function App() {
 
       <section className="workspace-grid">
         <article className="panel settings-panel">
-          <div className="panel-header"><div><p className="eyebrow">Configuration</p><h2>Container settings</h2></div><p>{configMessage}</p></div>
+          <div className="panel-header" style={{ cursor: 'pointer' }} onClick={() => setCollapsibleSections((s) => ({ ...s, settings: !s.settings }))}><div><p className="eyebrow">Configuration</p><h2>Container settings</h2></div><span>{collapsibleSections.settings ? '▼' : '▶'}</span></div>
+          {collapsibleSections.settings && <>
+          <p>{configMessage}</p>
           <form className="config-form" onSubmit={handleConfigSubmit}>
             <label className="wide">Container name<input value={config.containerName} onChange={(event) => setConfig((current) => ({ ...current, containerName: event.target.value }))} placeholder="Rain Barrel" /></label>
-            <label>Container depth <span>cm</span><input type="number" min="0.1" step="0.1" value={config.containerDepthCm} onChange={(event) => setConfig((current) => ({ ...current, containerDepthCm: Number(event.target.value) }))} /></label>
+            <label>Container depth <span>cm</span><input type="number" min="0.1" step="0.1" value={config.containerDepthCm || ''} onChange={(event) => setConfig((current) => ({ ...current, containerDepthCm: Number(event.target.value) }))} placeholder="120" /></label>
+            <label>Sensor mounting offset <span>cm</span><input type="number" min="0" step="0.1" value={config.sensorMountingOffsetCm} onChange={(event) => setConfig((current) => ({ ...current, sensorMountingOffsetCm: Number(event.target.value) }))} /><small>Distance from tank top to sensor</small></label>
             <label>Preferred connection<select value={config.preferredMode} onChange={(event) => setConfig((current) => ({ ...current, preferredMode: event.target.value as Mode }))}><option value="usb">Local USB bridge</option><option value="wifi">Wi‑Fi device</option></select></label>
             <label>Warning level <span>%</span><input type="number" min="0" max="100" value={config.warningThresholdPercent} onChange={(event) => setConfig((current) => ({ ...current, warningThresholdPercent: Number(event.target.value) }))} /></label>
             <label>Critical level <span>%</span><input type="number" min="0" max="100" value={config.criticalThresholdPercent} onChange={(event) => setConfig((current) => ({ ...current, criticalThresholdPercent: Number(event.target.value) }))} /></label>
-            {config.schemaVersion && <>
-              <div className="wide form-section"><strong>Measurement validation</strong><small>Full/empty calibration is more accurate than container depth. Capture points only at known stable levels.</small></div>
-              <label>Calibration mode<select value={measurement.calibrationMode} onChange={(event) => setConfig((current) => ({ ...current, measurement: { ...measurement, calibrationMode: event.target.value as 'container_depth' | 'full_empty' } }))}><option value="container_depth">Container depth</option><option value="full_empty">Full / empty points</option></select></label>
-              <label>Valid sensor range <span>cm min</span><input type="number" min="2" max="449" step="0.1" value={measurement.minimumValidDistanceCm} onChange={(event) => setConfig((current) => ({ ...current, measurement: { ...measurement, minimumValidDistanceCm: Number(event.target.value) } }))} /></label>
-              <div className="wide calibration-row"><button type="button" className="secondary" onClick={() => captureCalibration('full')}>Capture full ({measurement.fullDistanceCm?.toFixed(1) ?? '—'} cm)</button><button type="button" className="secondary" onClick={() => captureCalibration('empty')}>Capture empty ({measurement.emptyDistanceCm?.toFixed(1) ?? '—'} cm)</button></div>
-              <label>Maximum valid distance <span>cm</span><input type="number" min="3" max="450" step="0.1" value={measurement.maximumValidDistanceCm} onChange={(event) => setConfig((current) => ({ ...current, measurement: { ...measurement, maximumValidDistanceCm: Number(event.target.value) } }))} /></label>
-              <label>Median samples<select value={measurement.medianWindowSize} onChange={(event) => setConfig((current) => ({ ...current, measurement: { ...measurement, medianWindowSize: Number(event.target.value) } }))}>{[3,5,7,9,11,13,15].map((value) => <option key={value}>{value}</option>)}</select></label>
-              <label>Maximum sudden change <span>cm</span><input type="number" min="0" step="0.1" value={measurement.maximumStepCm} onChange={(event) => setConfig((current) => ({ ...current, measurement: { ...measurement, maximumStepCm: Number(event.target.value) } }))} /></label>
-              <label>Confirmation samples<input type="number" min="1" max="10" value={measurement.stepConfirmationSamples} onChange={(event) => setConfig((current) => ({ ...current, measurement: { ...measurement, stepConfirmationSamples: Number(event.target.value) } }))} /></label>
-              <label>Failures before fault<input type="number" min="1" max="20" value={measurement.invalidSamplesBeforeFault} onChange={(event) => setConfig((current) => ({ ...current, measurement: { ...measurement, invalidSamplesBeforeFault: Number(event.target.value) } }))} /></label>
-              <div className="wide form-section"><strong>Optional power controls</strong><small>Disabled by default. Scheduled sleep makes the dashboard unreachable between wake windows.</small></div>
-              <label className="check-label"><input type="checkbox" checked={power.powerSavingEnabled} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, powerSavingEnabled: event.target.checked } }))} /> Enable power saving</label>
-              <label>Sample interval <span>seconds</span><input type="number" min="0.5" max="3600" step="0.5" value={power.sampleIntervalSeconds} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, sampleIntervalSeconds: Number(event.target.value) } }))} /></label>
-              <label>OLED timeout <span>seconds · 0 always</span><input type="number" min="0" max="86400" value={power.displayTimeoutSeconds} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, displayTimeoutSeconds: Number(event.target.value) } }))} /></label>
-              <label className="check-label"><input type="checkbox" checked={power.scheduledSleepEnabled} disabled={!power.powerSavingEnabled} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, scheduledSleepEnabled: event.target.checked } }))} /> Scheduled deep sleep</label>
-              <label>Awake window <span>seconds</span><input type="number" min="15" max="600" value={power.awakeWindowSeconds} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, awakeWindowSeconds: Number(event.target.value) } }))} /></label>
-              <label className="check-label"><input type="checkbox" checked={power.batteryMonitoringEnabled} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, batteryMonitoringEnabled: event.target.checked } }))} /> Battery hardware installed</label>
-              <label>Battery low threshold <span>volts</span><input type="number" min="0" step="0.05" value={power.batteryLowVoltage} disabled={!power.batteryMonitoringEnabled} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, batteryLowVoltage: Number(event.target.value) } }))} /></label>
-              <label>Battery critical threshold <span>volts</span><input type="number" min="0" step="0.05" value={power.batteryCriticalVoltage} disabled={!power.batteryMonitoringEnabled} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, batteryCriticalVoltage: Number(event.target.value) } }))} /></label>
-              <label>Battery calibration multiplier<input type="number" min="0.1" step="0.01" value={power.batteryCalibrationMultiplier} disabled={!power.batteryMonitoringEnabled} onChange={(event) => setConfig((current) => ({ ...current, power: { ...power, batteryCalibrationMultiplier: Number(event.target.value) } }))} /></label>
-              <div className="wide form-section"><strong>Maintenance access</strong><small>The protected access point makes this dashboard available at 192.168.4.1 without a router.</small></div>
-              <label className="check-label"><input type="checkbox" checked={networkConfig.maintenanceApEnabled} onChange={(event) => setConfig((current) => ({ ...current, network: { ...networkConfig, maintenanceApEnabled: event.target.checked } }))} /> Enable maintenance AP</label>
-              <label>AP start delay <span>seconds</span><input type="number" min="0" max="600" value={networkConfig.maintenanceApDelaySeconds} onChange={(event) => setConfig((current) => ({ ...current, network: { ...networkConfig, maintenanceApDelaySeconds: Number(event.target.value) } }))} /></label>
-              <label>AP idle timeout <span>seconds · 0 always</span><input type="number" min="0" max="86400" value={networkConfig.maintenanceApIdleTimeoutSeconds} onChange={(event) => setConfig((current) => ({ ...current, network: { ...networkConfig, maintenanceApIdleTimeoutSeconds: Number(event.target.value) } }))} /></label>
-            </>}
             <button className="wide" type="submit" disabled={isSaving}>{isSaving ? 'Saving…' : 'Save configuration'}</button>
           </form>
+          </>}
         </article>
 
         <article className="panel connection-panel">
-          <div className="panel-header"><div><p className="eyebrow">Connectivity</p><h2>Device connection</h2></div><span className={`status-badge ${status.status}`}>{status.status}</span></div>
+          <div className="panel-header" style={{ cursor: 'pointer' }} onClick={() => setCollapsibleSections((s) => ({ ...s, connection: !s.connection }))}><div><p className="eyebrow">Connectivity</p><h2>Device connection</h2></div><div><span className={`status-badge ${status.status}`}>{status.status}</span><span>{collapsibleSections.connection ? '▼' : '▶'}</span></div></div>
+          {collapsibleSections.connection && <>
           <div className="connection-summary"><span>Mode<strong>{status.mode.toUpperCase()}</strong></span><span>Firmware<strong>{status.firmwareVersion}</strong></span><span>Payload<strong>{reading.source.toUpperCase()}</strong></span></div>
           {status.mode === 'wifi' && network && <div className="wifi-summary"><span>Network<strong>{network.ssid || 'Not configured'}</strong></span><span>Signal<strong>{network.connected ? `${network.signalDbm} dBm` : 'Offline'}</strong></span><button type="button" className="secondary" onClick={handleWifiReset}>Change Wi-Fi network</button></div>}
           {status.mode === 'wifi' && config.schemaVersion && <form className="network-form" onSubmit={handleNetworkSetup}><strong>Connect or change local Wi-Fi</strong><label>Network name<input value={wifiSsid} maxLength={32} onChange={(event) => setWifiSsid(event.target.value)} required /></label><label>Wi-Fi password<input type="password" value={wifiPassword} maxLength={64} onChange={(event) => setWifiPassword(event.target.value)} /></label><label>Sensor hostname<input value={wifiHostname} pattern="[a-z0-9-]+" maxLength={32} onChange={(event) => setWifiHostname(event.target.value.toLowerCase())} required /></label><button type="submit" className="secondary">Connect Wi-Fi</button></form>}
@@ -486,12 +469,16 @@ function App() {
           <form className="api-form" onSubmit={(event) => { event.preventDefault(); setApiBase(draftApiBase.replace(/\/$/, '')) }}><label>Device API URL<input type="url" value={draftApiBase} onChange={(event) => setDraftApiBase(event.target.value)} /></label><button type="submit" className="secondary">Apply</button></form>
           <p className="connection-message">{connectionMessage}</p>
           {config.schemaVersion && <><button type="button" className="secondary" onClick={loadDiagnostics}>Load diagnostics</button>{diagnostics && <pre className="diagnostics">{JSON.stringify(diagnostics, null, 2)}</pre>}</>}
+          </>}
         </article>
       </section>
 
       <section className="panel history-panel">
-        <div className="panel-header"><div><p className="eyebrow">Recent activity</p><h2>Latest readings</h2></div><p>Session history · newest first</p></div>
+        <div className="panel-header" style={{ cursor: 'pointer' }} onClick={() => setCollapsibleSections((s) => ({ ...s, history: !s.history }))}><div><p className="eyebrow">Recent activity</p><h2>Latest readings</h2></div><span>{collapsibleSections.history ? '▼' : '▶'}</span></div>
+        {collapsibleSections.history && <>
+        <p>Session history · newest first</p>
         {history.length === 0 ? <div className="empty-state">Readings will appear here when the sensor begins reporting.</div> : <div className="history-list">{history.map((item) => <div key={item.sampleSequence ?? item.timestamp}><span className={`reading-dot ${item.readingState}`} /><time>{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : `#${item.sampleSequence ?? '—'}`}</time><strong>{item.waterPercent === null || item.readingState !== 'ok' ? 'No Reading' : `${item.waterPercent.toFixed(1)}%`}</strong><span>{item.distanceCm === null ? '—' : `${item.distanceCm.toFixed(1)} cm distance`}</span><small>{item.readingState.replaceAll('_', ' ')}</small></div>)}</div>}
+        </>}
       </section>
     </main>
   )
