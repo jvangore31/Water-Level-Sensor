@@ -29,8 +29,8 @@
 #define WIFI_CONNECT_TIMEOUT_MS 20000UL
 #define WIFI_AP_FALLBACK_MS 30000UL
 #define WIFI_SETUP_AP_SHUTDOWN_MS 15000UL
-#define FIRMWARE_VERSION "0.4.0"
-#define CONFIG_SCHEMA_VERSION 2
+#define FIRMWARE_VERSION "0.4.1"
+#define CONFIG_SCHEMA_VERSION 3
 #define BATTERY_ADC_PIN 34
 #ifndef WATER_LEVEL_BOOTSTRAP_CREDENTIAL
 #define WATER_LEVEL_BOOTSTRAP_CREDENTIAL "waterlevel-setup"
@@ -38,6 +38,7 @@
 
 struct AppConfig {
   float containerDepthCm = 120.0f;
+  float sensorMountingOffsetCm = 0.0f;
   String containerName = "Main Tank";
   float warningThresholdPercent = 35.0f;
   float criticalThresholdPercent = 15.0f;
@@ -227,6 +228,7 @@ void loadSettings() {
   savedPassword = preferences.getString("wifiPass", "");
   hostname = sanitizeHostname(preferences.getString("hostname", "water-level"));
   config.containerDepthCm = preferences.getFloat("depthCm", 120.0f);
+  config.sensorMountingOffsetCm = preferences.getFloat("mountOff", 0.0f);
   config.containerName = preferences.getString("tankName", "Main Tank");
   config.warningThresholdPercent = preferences.getFloat("warnPct", 35.0f);
   config.criticalThresholdPercent = preferences.getFloat("criticalPct", 15.0f);
@@ -270,6 +272,7 @@ void loadSettings() {
 
 void persistConfig() {
   preferences.putFloat("depthCm", config.containerDepthCm);
+  preferences.putFloat("mountOff", config.sensorMountingOffsetCm);
   preferences.putString("tankName", config.containerName);
   preferences.putFloat("warnPct", config.warningThresholdPercent);
   preferences.putFloat("criticalPct", config.criticalThresholdPercent);
@@ -683,6 +686,7 @@ void handleProvisioningRequest(AsyncWebServerRequest* request, JsonVariant& json
 
 void handleConfigUpdate(AsyncWebServerRequest* request, JsonVariant& json) {
   const float depth = json["containerDepthCm"] | 0.0f;
+  const float mountingOffset = json["sensorMountingOffsetCm"] | config.sensorMountingOffsetCm;
   const float warning = json["warningThresholdPercent"] | -1.0f;
   const float critical = json["criticalThresholdPercent"] | -1.0f;
   const String name = json["containerName"] | "";
@@ -712,7 +716,8 @@ void handleConfigUpdate(AsyncWebServerRequest* request, JsonVariant& json) {
   const uint32_t apIdle = network["maintenanceApIdleTimeoutSeconds"] | config.maintenanceApIdleTimeoutSeconds;
   const bool calibrationValid = calibrationMode == "container_depth" ||
     (calibrationMode == "full_empty" && isfinite(full) && isfinite(empty) && full >= minimumValid && empty <= maximumValid && empty - full >= 5.0f);
-  if (depth <= 0 || depth > 10000 || warning < 0 || warning > 100 || critical < 0 || critical > warning || name.length() > 64 ||
+  if (depth <= 0 || depth > 10000 || mountingOffset < 0 || mountingOffset > MAX_DISTANCE_CM ||
+      warning < 0 || warning > 100 || critical < 0 || critical > warning || name.length() > 64 ||
       !calibrationValid || minimumValid < 2 || maximumValid > MAX_DISTANCE_CM || maximumValid <= minimumValid ||
       medianWindow < 3 || medianWindow > 15 || medianWindow % 2 == 0 || maximumStep < 0 || stepSamples < 1 || stepSamples > 10 || invalidSamples < 1 || invalidSamples > 20 ||
       sampleSeconds < 0.5f || sampleSeconds > 3600 || (displaySeconds > 0 && (displaySeconds < 10 || displaySeconds > 86400)) ||
@@ -721,6 +726,7 @@ void handleConfigUpdate(AsyncWebServerRequest* request, JsonVariant& json) {
     return;
   }
   config.containerDepthCm = depth;
+  config.sensorMountingOffsetCm = mountingOffset;
   config.containerName = name;
   config.warningThresholdPercent = warning;
   config.criticalThresholdPercent = critical;
@@ -793,9 +799,10 @@ void recalculateReading() {
     latestReading.waterDepthCm = (latestReading.waterPercent / 100.0f) * (config.emptyDistanceCm - config.fullDistanceCm);
     latestReading.outsideCalibrationRange = latestReading.distanceCm < config.fullDistanceCm || latestReading.distanceCm > config.emptyDistanceCm;
   } else {
-    latestReading.waterDepthCm = max(config.containerDepthCm - latestReading.distanceCm, 0.0f);
+    const float adjustedDistanceCm = latestReading.distanceCm - config.sensorMountingOffsetCm;
+    latestReading.waterDepthCm = max(config.containerDepthCm - adjustedDistanceCm, 0.0f);
     latestReading.waterPercent = constrain((latestReading.waterDepthCm / config.containerDepthCm) * 100.0f, 0.0f, 100.0f);
-    latestReading.outsideCalibrationRange = latestReading.distanceCm > config.containerDepthCm;
+    latestReading.outsideCalibrationRange = adjustedDistanceCm < 0 || adjustedDistanceCm > config.containerDepthCm;
   }
 }
 
@@ -842,6 +849,7 @@ String configJson() {
   JsonDocument document;
   document["schemaVersion"] = CONFIG_SCHEMA_VERSION;
   document["containerDepthCm"] = config.containerDepthCm;
+  document["sensorMountingOffsetCm"] = config.sensorMountingOffsetCm;
   document["containerName"] = config.containerName;
   document["warningThresholdPercent"] = config.warningThresholdPercent;
   document["criticalThresholdPercent"] = config.criticalThresholdPercent;

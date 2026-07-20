@@ -19,6 +19,7 @@ type AppConfig = {
   warningThresholdPercent: number
   criticalThresholdPercent: number
   preferredMode: Mode
+  sensorMountingOffsetCm: number
 }
 
 type ReadingPayload = {

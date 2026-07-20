@@ -312,6 +312,10 @@ function App() {
       setConfigMessage('Critical threshold must not exceed the warning threshold.')
       return
     }
+    if (!Number.isFinite(config.sensorMountingOffsetCm) || config.sensorMountingOffsetCm < 0) {
+      setConfigMessage('Sensor mounting offset must be zero or greater.')
+      return
+    }
     setIsSaving(true)
     try {
       const data = await requestJson<AppConfig>('/api/config', {
@@ -368,14 +372,6 @@ function App() {
     }
   }
 
-  const captureCalibration = async (point: 'full' | 'empty') => {
-    if (!window.confirm(`Capture the current stable reading as the ${point} point?`)) return
-    try {
-      const next = await requestJson<AppConfig>(`/api/calibration/capture-${point}`, { method: 'POST' })
-      setConfig(normalizeConfig(next)); setConfigMessage(`${point === 'full' ? 'Full' : 'Empty'} point captured.`)
-    } catch (error) { setConfigMessage(error instanceof Error ? error.message : 'Calibration capture failed.') }
-  }
-
   const loadDiagnostics = async () => {
     try { setDiagnostics(await requestJson<Record<string, unknown>>('/api/diagnostics')) }
     catch (error) { setConnectionMessage(error instanceof Error ? error.message : 'Diagnostics unavailable.') }
@@ -394,10 +390,6 @@ function App() {
   const fillPercent = reading.waterPercent === null || reading.readingState !== 'ok' ? 0 : reading.waterPercent
   const updatedLabel = reading.timestamp ? new Date(reading.timestamp).toLocaleString() : 'No reading yet'
   const endpoint = status.serialPort ?? status.ipAddress ?? 'No device endpoint'
-  const measurement = config.measurement ?? defaultConfig.measurement!
-  const power = config.power ?? defaultConfig.power!
-  const networkConfig = config.network ?? defaultConfig.network!
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -449,7 +441,7 @@ function App() {
           <form className="config-form" onSubmit={handleConfigSubmit}>
             <label className="wide">Container name<input value={config.containerName} onChange={(event) => setConfig((current) => ({ ...current, containerName: event.target.value }))} placeholder="Rain Barrel" /></label>
             <label>Container depth <span>cm</span><input type="number" min="0.1" step="0.1" value={config.containerDepthCm || ''} onChange={(event) => setConfig((current) => ({ ...current, containerDepthCm: Number(event.target.value) }))} placeholder="120" /></label>
-            <label>Sensor mounting offset <span>cm</span><input type="number" min="0" step="0.1" value={config.sensorMountingOffsetCm} onChange={(event) => setConfig((current) => ({ ...current, sensorMountingOffsetCm: Number(event.target.value) }))} /><small>Distance from tank top to sensor</small></label>
+            <label>Sensor mounting offset <span>cm</span><input type="number" min="0" step="0.1" value={Number.isFinite(config.sensorMountingOffsetCm) ? config.sensorMountingOffsetCm : ''} onChange={(event) => setConfig((current) => ({ ...current, sensorMountingOffsetCm: event.target.value === '' ? Number.NaN : Number(event.target.value) }))} placeholder="0" /><small>Distance from tank top to sensor</small></label>
             <label>Preferred connection<select value={config.preferredMode} onChange={(event) => setConfig((current) => ({ ...current, preferredMode: event.target.value as Mode }))}><option value="usb">Local USB bridge</option><option value="wifi">Wi‑Fi device</option></select></label>
             <label>Warning level <span>%</span><input type="number" min="0" max="100" value={config.warningThresholdPercent} onChange={(event) => setConfig((current) => ({ ...current, warningThresholdPercent: Number(event.target.value) }))} /></label>
             <label>Critical level <span>%</span><input type="number" min="0" max="100" value={config.criticalThresholdPercent} onChange={(event) => setConfig((current) => ({ ...current, criticalThresholdPercent: Number(event.target.value) }))} /></label>
